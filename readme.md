@@ -1,4 +1,4 @@
-SNC -- Secure Net Cat Utility
+#SNC -- Secure Net Cat Utility
 SNC is a Python script that utilizes Pycrytodome to receive and deliver encrypted messages. Using a shared key, these messages can then be decrypted using AES256-GCM.
 - The following assumes you are running the latest version of Python3.
 
