@@ -1,0 +1,272 @@
+#! /bin/python3
+
+################################################################################
+# File: snc
+# Author: Jonathan Troy Hunt
+# Date:  Fri 01/31/2020
+# Email: jthunt@ncsu.edu
+# Class: CSC 574
+# Description:
+#   SNC is a Python script that utilizes pycrytodome to receive and deliver encrypted messages.
+#   Using a shared key, these messages can then be decrypted using AES256-GCM.
+#       - The following assumes you are running the latest version of Python3.
+#
+# Usage: snc[-h] - -key KEY[--listen LISTEN][hostname][portNumber]
+#       
+#       positional arguments:
+#         hostname                          List hostname
+#         portNumber                        List port number
+#       
+#       optional arguments:
+#       
+#         -h, --help                        Show this help message and exit
+#         --key KEY, -k KEY                 List encryption key
+#         --listen LISTEN, -l LISTEN        Listen for port number
+#         
+################################################################################
+
+import json
+import argparse
+import sys
+import socket
+import select
+from base64 import b64encode
+from base64 import b64decode
+from Crypto.Protocol.KDF import PBKDF2
+from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
+
+
+# Create initial encryption key
+def init_encryption_key(password):
+    salt = get_random_bytes(16)
+    kdf = PBKDF2(password, salt, 64, 1000)
+    new_key = kdf[:32]
+    return new_key, salt
+
+
+# Recreate key using received salt
+def init_decryption_key(password, salt):
+    kdf = PBKDF2(password, salt, 64, 1000)
+    new_key = kdf[:32]
+    return new_key
+
+
+# Encrypt files using AES in GCM mode
+# Use json and base64 to securly load objects
+def encryption(key, salt, message):
+    try:
+        HEAD_LIMIT = 10
+        message = bytes(message, "utf-8")
+        cipher = AES.new(key, AES.MODE_GCM)
+        cipher.update(salt)
+        ciphertext, tag = cipher.encrypt_and_digest(message)
+        json_k = ['nonce', 'ciphertext', 'tag', 'salt']
+        json_v = [b64encode(x).decode('utf-8') for x in (cipher.nonce, ciphertext, tag, salt)]
+        result = json.dumps(dict(zip(json_k, json_v)))
+        result = (f'{len(result):<{HEAD_LIMIT}}' + result)
+        return result
+    except (ValueError, KeyError):
+        sys.stderr.write("Incorrect encryption")
+
+
+# Decrypt files using AES in GCM mode
+# Use json and base64 to securely load objects
+def decryption(result, key):
+    try:
+        json_input = result
+        b64 = json.loads(json_input)
+        json_k = ['nonce', 'ciphertext', 'tag', 'salt']
+        jv = {k: b64decode(b64[k]) for k in json_k}
+        d_key = init_decryption_key(key, jv['salt'])
+        cipher = AES.new(d_key, AES.MODE_GCM, nonce=jv['nonce'])
+        cipher.update(jv['salt'])
+        plaintext = cipher.decrypt_and_verify(jv['ciphertext'], jv['tag'])
+        return plaintext
+    except (ValueError, KeyError):
+        sys.stderr.write("Incorrect decryption")
+
+
+# define server
+def snc_server(user_key, listening_port):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    tcp_client = ("localhost", listening_port)
+    s.bind(tcp_client)
+    s.listen(1)
+
+    client_socket = None
+    client_address = None
+
+    HEAD_LENGTH = 10
+    HEAD_LIMIT = 10
+
+    credentials = init_encryption_key(user_key)
+    key, salt = credentials[0], credentials[1]
+
+    rlist = [s, sys.stdin]
+    wlist = []                          # Not Needed for this project
+    xlist = []                          # Not Needed for this project
+    full_msg = b''                      # indicated a blank message (0 - bits)
+    buff_size = 1024                    # Adjustable buff size
+    message_sent = False
+    message_received = False
+
+    msglen = 0
+    break_token = False
+
+    while True:
+        # Initialize connection
+        rfd, wfd, xfd = select.select(rlist, wlist, xlist, 0)
+        for token in rfd:
+            if token is s:
+                client_socket, client_address = s.accept()
+                rfd.append(client_socket)
+
+            # send data
+            elif token is sys.stdin:
+                if client_socket in rfd:
+                    for line in sys.stdin:
+                        server_text = encryption(key, salt, line)
+                        client_socket.sendall(bytes(server_text, "utf-8"))
+                    client_socket.sendall(b'9865321458')  # Informs client that no more data can be sent.
+                    message_sent = True
+
+            # Read incoming data (If Any) # Works by counting the length (head) at the beginning to each Cipher
+            elif message_received is False and message_sent is True:
+                while True:
+                    if break_token:       # prevents msg.recv from trying to get data after no more data is being sent.
+                        break
+                    msg = client_socket.recv(buff_size)
+                    if not msg:
+                        break_token = True
+                        break
+                    if msg == b'NODATATOSEND':     # This is used when sys.stdin is not present from the Client side
+                        break_token = True
+                        break
+                    full_msg += msg
+                    while True:
+                        if full_msg == b'':
+                            break
+                        msglen = int(full_msg[:HEAD_LIMIT])
+                        if msglen == 9865321458:            #Que that no more dat will be sent.
+                            break_token = True
+                            break
+                        pop_token = msglen + HEAD_LENGTH
+                        if len(full_msg) < pop_token:
+                            break
+                        current_message = (full_msg[10:msglen + 10])
+                        current_message = str(current_message, "utf-8")
+                        current_message = decryption(current_message, user_key)
+                        sys.stdout.write(str(current_message, "utf-8"))
+                        full_msg = full_msg[pop_token:]
+
+                        # Close socket
+            if break_token is True and message_sent is True:
+                client_socket.close()
+                exit()
+    # Close socket to prevent exception(s)
+    s.close()
+    exit()
+
+
+# define client
+def snc_client(encryption_key, server_port, server_address):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    tcp_server = (server_address, server_port)
+    s.connect(tcp_server)
+
+    client_socket = None
+    client_address = None
+
+    HEAD_LENGTH = 10
+    HEAD_LIMIT = 10
+
+    credentials = init_encryption_key(encryption_key)
+    key, salt = credentials[0], credentials[1]
+
+    full_msg = b''
+    buff_size = 1024
+
+    rlist = [sys.stdin, s]
+    wlist = []
+    xlist = []
+
+    message_sent = False
+    message_received = False
+    client_input = None
+
+    sys_input = sys.stdin.isatty()
+    if not sys_input:
+        client_input = True
+    else:
+        client_input = False
+
+    while True:
+        rfd, wfd, xfd = select.select(rlist, wlist, xlist, 30)
+        for token in rfd:
+
+            if token is sys.stdin and message_sent is False and client_input is True:
+                for line in sys.stdin:
+                    server_text = encryption(key, salt, line)
+                    s.sendall(bytes(server_text, "utf-8"))
+                s.sendall(b'9865321458')  # Informs client that no more data can be sent.
+                message_sent = True
+
+            if client_input is False:
+                s.sendall(b'NODATATOSEND')
+                message_sent = True
+
+            if token is s and message_received is False and message_sent is True:
+                while True:
+                    msg = s.recv(buff_size)
+                    if not msg:
+                        message_received = True
+                        break
+                    full_msg += msg
+                    if message_received:
+                        break
+                    while True:
+                        if full_msg == b'':
+                            break
+                        msglen = int(full_msg[:HEAD_LIMIT])
+                        if msglen == 9865321458:
+                            message_received = True
+                            break
+                        pop_token = msglen + HEAD_LENGTH
+                        if len(full_msg) < pop_token:
+                            break
+                        current_message = (full_msg[10:msglen + 10])
+                        current_message = str(current_message, "utf-8")
+                        current_message = decryption(current_message, encryption_key)
+                        sys.stdout.write(str(current_message, "utf-8"))
+                        full_msg = full_msg[pop_token:]
+
+            if message_received is True and message_sent is True:
+                s.close
+                exit()
+
+
+def user_input():
+    # Parse Arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--key", "-k", help="List encryption key", type=str, required=True)
+    parser.add_argument("--listen", "-l", help="listen for port number", type=int, required=False)
+    parser.add_argument("hostname", help="List hostname", nargs='?')
+    parser.add_argument("portNumber", help="List port number", nargs='?', type=int)
+    args = parser.parse_args()
+
+    # Init values and check inputs
+    if args.key and args.listen and not args.hostname and not args.portNumber:
+        key, l_port = args.key, args.listen
+        snc_server(key, l_port)
+    if args.key and args.hostname and args.portNumber and not args.listen:
+        key, hostname, port = args.key, args.hostname, args.portNumber
+        snc_client(key, port, hostname)
+    else:
+        sys.stderr.write("Something went wrong. Please check arguments and try again.\nUsage: ./snc [--key KEY] [-l] ["
+                         "hostname] [portNumber]\n")
+        exit()
+
+
+if __name__ == "__main__":
+    user_input()
