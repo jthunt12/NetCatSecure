@@ -54,8 +54,3 @@ Host
 client
 ./snc --key THISISAKEY 127.0.0.1 133 > recieved_file.txt < client.txt
 ```
-# Notice
-*When Sending data from the the Server side, the Server will close as soon as all data has been sent and/or decrypted.
-Additional time might need to be given to allow the Client to decrypt the receiving ciphers. (It is unlikely that a timeout has occurred.)
-If you are sending a larger file from the Client side, the Client will wait until the Server has decrypted all data before closing.
-In this case both will close at the same time. Text files have been tested as large as 5mb.
