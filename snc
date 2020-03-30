@@ -5,7 +5,7 @@
 # Author: Jonathan Troy Hunt
 # Date:  Fri 01/31/2020
 # Email: jthunt@ncsu.edu
-# Class: CSC 574 -- Universtiy of North Carolina
+# Class: CSC 574 -- North Carolina State University
 # Description:
 #   SNC is a Python script that utilizes pycrytodome to receive and deliver encrypted messages.
 #   Using a shared key, these messages can then be decrypted using AES256-GCM.
