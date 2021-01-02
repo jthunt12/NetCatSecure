@@ -4,14 +4,13 @@
 # File: snc
 # Author: Jonathan Troy Hunt
 # Date:  Fri 01/31/2020
-# Email: jthunt@ncsu.edu
-# Class: CSC 574 -- North Carolina State University
+# Email: jthunt92@gmail.com
 # Description:
 #   SNC is a Python script that utilizes pycrytodome to receive and deliver encrypted messages.
 #   Using a shared key, these messages can then be decrypted using AES256-GCM.
-#       - The following assumes you are running the latest version of Python3.
+#       - The following assumes you are running of Python3.
 #
-# Usage: snc[-h] - -key KEY[--listen LISTEN][hostname][portNumber]
+#   Usage: snc[-h] - -key KEY[--listen LISTEN][hostname][portNumber]
 #       
 #       positional arguments:
 #         hostname                          List hostname
