@@ -127,7 +127,7 @@ def snc_server(user_key, listening_port):
                     for line in sys.stdin:
                         server_text = encryption(key, salt, line)
                         client_socket.sendall(bytes(server_text, "utf-8"))
-                    client_socket.sendall(b'9865321458')  # Informs client that no more data can be sent.
+                    client_socket.sendall(b'-1')  # Informs client that no more data can be sent.
                     message_sent = True
 
             # Read incoming data (If Any) # Works by counting the length (head) at the beginning to each Cipher
@@ -147,7 +147,7 @@ def snc_server(user_key, listening_port):
                         if full_msg == b'':
                             break
                         msglen = int(full_msg[:HEAD_LIMIT])
-                        if msglen == 9865321458:            #Que that no more dat will be sent.
+                        if msglen == -1:            #Que that no more dat will be sent.
                             break_token = True
                             break
                         pop_token = msglen + HEAD_LENGTH
@@ -208,7 +208,7 @@ def snc_client(encryption_key, server_port, server_address):
                 for line in sys.stdin:
                     server_text = encryption(key, salt, line)
                     s.sendall(bytes(server_text, "utf-8"))
-                s.sendall(b'9865321458')  # Informs client that no more data can be sent.
+                s.sendall(b'-1')  # Informs client that no more data can be sent.
                 message_sent = True
 
             if client_input is False:
@@ -228,7 +228,7 @@ def snc_client(encryption_key, server_port, server_address):
                         if full_msg == b'':
                             break
                         msglen = int(full_msg[:HEAD_LIMIT])
-                        if msglen == 9865321458:
+                        if msglen == -1:
                             message_received = True
                             break
                         pop_token = msglen + HEAD_LENGTH
